@@ -1,12 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\FinanceApp.Application\FinanceApp.Application.csproj" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.13" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.13" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.13" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.13" />
+    <ProjectReference Include="..\FinanceApp.Domain\FinanceApp.Domain.csproj" />
+    <ProjectReference Include="..\FinanceApp.Application\FinanceApp.Application.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

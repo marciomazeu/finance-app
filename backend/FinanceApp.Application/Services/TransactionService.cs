@@ -41,4 +41,16 @@ public class TransactionService : ITransactionService
     await _repository.DeleteAsync(id);
     return true;
 }
+
+public async Task<bool> UpdateAsync(int id, TransactionRequest request)
+{
+    var existingTransaction = await _repository.GetByIdAsync(id);
+    if (existingTransaction == null) return false;
+
+    // O AutoMapper pode atualizar o objeto existente com os dados do Request
+    _mapper.Map(request, existingTransaction);
+
+    await _repository.UpdateAsync(existingTransaction);
+    return true;
+}
 }

@@ -53,4 +53,17 @@ public async Task<ActionResult<IEnumerable<TransactionResponse>>> Get(
 
         return NoContent();
     }
+
+    [HttpPut("{id}")]
+    public async Task<ActionResult> Update(int id, [FromBody] TransactionRequest request)
+    {
+        var success = await _service.UpdateAsync(id, request);
+        
+        if (!success)
+        {
+            return NotFound(new { message = "Transação não encontrada para atualização." });
+        }
+
+        return NoContent(); // 204 significa que foi alterado com sucesso
+    }
 }

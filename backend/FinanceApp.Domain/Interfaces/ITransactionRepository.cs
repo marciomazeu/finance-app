@@ -10,4 +10,6 @@ public interface ITransactionRepository
 
     Task DeleteAsync(int id);
     Task<Transaction?> GetByIdAsync(int id); // Precisamos achar antes de deletar
+
+    Task UpdateAsync(Transaction transaction);
 }

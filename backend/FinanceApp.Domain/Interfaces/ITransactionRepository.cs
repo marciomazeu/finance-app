@@ -1,6 +1,7 @@
 using FinanceApp.Domain.Entities;
 
 namespace FinanceApp.Domain.Interfaces;
+using FinanceApp.Domain.DTOs;
 
 public interface ITransactionRepository
 {
@@ -12,4 +13,6 @@ public interface ITransactionRepository
     Task<Transaction?> GetByIdAsync(int id); // Precisamos achar antes de deletar
 
     Task UpdateAsync(Transaction transaction);
+
+    Task<DashboardResponse> GetDashboardAsync(DateTime? startDate = null, DateTime? endDate = null);
 }

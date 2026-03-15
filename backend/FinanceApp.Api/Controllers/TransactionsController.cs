@@ -4,6 +4,7 @@ using FinanceApp.Infrastructure.Data;
 using FinanceApp.Domain.Entities;
 using FinanceApp.Application.DTOs;
 using FinanceApp.Application.Interfaces;
+using FinanceApp.Domain.DTOs;
 
 namespace FinanceApp.Api.Controllers;
 
@@ -65,5 +66,14 @@ public async Task<ActionResult<IEnumerable<TransactionResponse>>> Get(
         }
 
         return NoContent(); // 204 significa que foi alterado com sucesso
+    }
+
+    [HttpGet("dashboard")]
+    public async Task<ActionResult<DashboardResponse>> GetDashboard(
+        [FromQuery] DateTime? startDate, 
+        [FromQuery] DateTime? endDate)
+    {
+        var dashboard = await _service.GetBalanceAsync(startDate, endDate);
+        return Ok(dashboard);
     }
 }

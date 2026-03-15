@@ -3,6 +3,7 @@ using FinanceApp.Application.Interfaces;
 using FinanceApp.Application.DTOs;
 using FinanceApp.Domain.Entities;
 using FinanceApp.Domain.Interfaces;
+using FinanceApp.Domain.DTOs;
 
 namespace FinanceApp.Application.Services;
 
@@ -52,5 +53,13 @@ public async Task<bool> UpdateAsync(int id, TransactionRequest request)
 
     await _repository.UpdateAsync(existingTransaction);
     return true;
+}
+
+public async Task<DashboardResponse> GetBalanceAsync(DateTime? startDate = null, DateTime? endDate = null)
+{
+    // Ajuste de fim de dia para o filtro ser preciso
+    if (endDate.HasValue) endDate = endDate.Value.Date.AddDays(1).AddTicks(-1);
+
+    return await _repository.GetDashboardAsync(startDate, endDate);
 }
 }

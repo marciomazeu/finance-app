@@ -1,6 +1,7 @@
 using FinanceApp.Application.DTOs;
 
 namespace FinanceApp.Application.Interfaces;
+using FinanceApp.Domain.DTOs;
 
 public interface ITransactionService
 {
@@ -10,4 +11,6 @@ public interface ITransactionService
      Task<bool> DeleteAsync(int id);
 
      Task<bool> UpdateAsync(int id, TransactionRequest request);
+
+     Task<DashboardResponse> GetBalanceAsync(DateTime? startDate = null, DateTime? endDate = null);
 }

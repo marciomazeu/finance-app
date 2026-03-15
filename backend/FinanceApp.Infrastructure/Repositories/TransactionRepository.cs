@@ -1,7 +1,9 @@
+using FinanceApp.Application.DTOs;
 using FinanceApp.Domain.Entities;
 using FinanceApp.Domain.Interfaces;
 using FinanceApp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using FinanceApp.Domain.DTOs;
 
 namespace FinanceApp.Infrastructure.Repositories;
 
@@ -61,5 +63,21 @@ public async Task UpdateAsync(Transaction transaction)
 {
     _context.Transactions.Update(transaction);
     await _context.SaveChangesAsync();
+}
+
+public async Task<DashboardResponse> GetDashboardAsync(DateTime? startDate = null, DateTime? endDate = null)
+{
+    var query = _context.Transactions.AsQueryable();
+
+    if (startDate.HasValue) query = query.Where(t => t.Date >= startDate.Value);
+    if (endDate.HasValue) query = query.Where(t => t.Date <= endDate.Value);
+
+    var transactions = await query.ToListAsync();
+
+    // Type 1 = Entrada, Type 2 = Saída (Ajuste conforme seus Enums)
+    var incomes = transactions.Where(t => (int)t.Type == 1).Sum(t => t.Amount);
+    var expenses = transactions.Where(t => (int)t.Type == 2).Sum(t => t.Amount);
+
+    return new DashboardResponse(incomes, expenses, incomes - expenses);
 }
 }

@@ -13,4 +13,6 @@ public interface ITransactionService
      Task<bool> UpdateAsync(int id, TransactionRequest request);
 
      Task<DashboardResponse> GetBalanceAsync(DateTime? startDate = null, DateTime? endDate = null);
+
+     Task<IEnumerable<CategorySummaryResponse>> GetCategorySummaryAsync(DateTime? startDate = null, DateTime? endDate = null);
 }

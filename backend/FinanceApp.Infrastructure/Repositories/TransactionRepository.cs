@@ -80,4 +80,27 @@ public async Task<DashboardResponse> GetDashboardAsync(DateTime? startDate = nul
 
     return new DashboardResponse(incomes, expenses, incomes - expenses);
 }
+
+public async Task<IEnumerable<CategorySummaryResponse>> GetSummaryByCategoryAsync(DateTime? startDate = null, DateTime? endDate = null)
+{
+    var query = _context.Transactions
+        .Include(t => t.Category) // Precisamos do nome da categoria
+        .AsQueryable();
+
+    if (startDate.HasValue) query = query.Where(t => t.Date >= startDate.Value);
+    if (endDate.HasValue) query = query.Where(t => t.Date <= endDate.Value);
+
+    var transactions = await query.ToListAsync();
+    var totalPeriod = transactions.Sum(t => t.Amount);
+
+    return transactions
+        .GroupBy(t => new { t.CategoryId, t.Category.Name })
+        .Select(g => new CategorySummaryResponse(
+            g.Key.CategoryId,
+            g.Key.Name,
+            g.Sum(t => t.Amount),
+            totalPeriod > 0 ? (g.Sum(t => t.Amount) / totalPeriod) * 100 : 0
+        ))
+        .OrderByDescending(c => c.TotalAmount);
+}
 }

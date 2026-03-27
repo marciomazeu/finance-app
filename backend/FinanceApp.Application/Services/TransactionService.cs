@@ -62,4 +62,10 @@ public async Task<DashboardResponse> GetBalanceAsync(DateTime? startDate = null,
 
     return await _repository.GetDashboardAsync(startDate, endDate);
 }
+
+public async Task<IEnumerable<CategorySummaryResponse>> GetCategorySummaryAsync(DateTime? startDate = null, DateTime? endDate = null)
+{
+    if (endDate.HasValue) endDate = endDate.Value.Date.AddDays(1).AddTicks(-1);
+    return await _repository.GetSummaryByCategoryAsync(startDate, endDate);
+}
 }

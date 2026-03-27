@@ -9,6 +9,8 @@ public class Transaction
     public string Description { get; private set; }
     public TransactionType Type { get; private set; }
     public int CategoryId { get; private set; }
+
+    public virtual Category Category { get; set; }
     public int AccountId { get; private set; }
 
     protected Transaction() { }

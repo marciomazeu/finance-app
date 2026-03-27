@@ -76,4 +76,13 @@ public async Task<ActionResult<IEnumerable<TransactionResponse>>> Get(
         var dashboard = await _service.GetBalanceAsync(startDate, endDate);
         return Ok(dashboard);
     }
+
+    [HttpGet("categories-summary")]
+    public async Task<ActionResult<IEnumerable<CategorySummaryResponse>>> GetCategorySummary(
+        [FromQuery] DateTime? startDate, 
+        [FromQuery] DateTime? endDate)
+    {
+        var summary = await _service.GetCategorySummaryAsync(startDate, endDate);
+        return Ok(summary);
+    }
 }

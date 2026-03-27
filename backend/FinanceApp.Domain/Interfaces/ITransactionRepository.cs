@@ -15,4 +15,6 @@ public interface ITransactionRepository
     Task UpdateAsync(Transaction transaction);
 
     Task<DashboardResponse> GetDashboardAsync(DateTime? startDate = null, DateTime? endDate = null);
+
+    Task<IEnumerable<CategorySummaryResponse>> GetSummaryByCategoryAsync(DateTime? startDate = null, DateTime? endDate = null);
 }

@@ -2,16 +2,16 @@ namespace FinanceApp.Domain.Entities;
 
 public class User
 {
-    public int Id { get; private set; }
-    public string Name { get; private set; }
-    public string Email { get; private set; }
-    public string PasswordHash { get; private set; }
-    public DateTime CreatedAt { get; private set; }
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public string Email { get; set; }
+    public string PasswordHash { get; set; }
+    public DateTime CreatedAt { get; set; }
 
 // Propriedade de navegação: Um usuário terá muitas transações (ou contas)
-    public ICollection<Transaction> Transactions { get; private set; } = new List<Transaction>();
+    public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 
-    protected User() { } // Para o EF Core
+    public User() { } // Para o EF Core
 
     public User(string name, string email, string passwordHash)
     {

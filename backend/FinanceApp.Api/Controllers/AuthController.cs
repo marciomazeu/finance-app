@@ -23,4 +23,13 @@ public class AuthController : ControllerBase
 
         return Ok("Usuário registrado com sucesso!");
     }
+
+    [HttpPost("login")]
+    public async Task<IActionResult> Login([FromBody] LoginRequest request)
+    {
+        var response = await _authService.LoginAsync(request);
+        if (response == null) return Unauthorized("E-mail ou senha inválidos.");
+
+        return Ok(response);
+    }
 }

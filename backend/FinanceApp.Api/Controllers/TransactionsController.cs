@@ -5,11 +5,13 @@ using FinanceApp.Domain.Entities;
 using FinanceApp.Application.DTOs;
 using FinanceApp.Application.Interfaces;
 using FinanceApp.Domain.DTOs;
+using Microsoft.AspNetCore.Authorization;
 
 namespace FinanceApp.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class TransactionsController : ControllerBase
 {
     private readonly ITransactionService _service;

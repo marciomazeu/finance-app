@@ -112,8 +112,8 @@ using (var scope = app.Services.CreateScope())
             context.SaveChanges(); // Salvamos para gerar o ID do usuário
 
             // 2. Criar a Categoria
-            var category = new Category("Geral");
-            context.Categories.Add(category);
+            var initialCategory = new Category("Geral");
+            context.Categories.Add(initialCategory);
 
             // 3. Criar a Conta usando o ID do usuário criado
             // Conforme o erro: Account(string name, int userId, decimal balance)

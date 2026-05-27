@@ -21,7 +21,8 @@ public class DashboardController : ControllerBase
         // Pega o ID do usuário logado do Token JWT (o famoso ID 5)
         var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
         
-        var summary = await _transactionService.GetBalanceAsync(userId, startDate, endDate);
+        //var summary = await _transactionService.GetBalanceAsync(userId, startDate, endDate);
+        var summary = await _transactionService.GetBalanceAsync(startDate, endDate);
         return Ok(summary);
     }
 
@@ -30,7 +31,8 @@ public class DashboardController : ControllerBase
     {
         var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
         
-        var categories = await _transactionService.GetCategorySummaryAsync(userId, startDate, endDate);
+        //var categories = await _transactionService.GetCategorySummaryAsync(userId, startDate, endDate);
+        var categories = await _transactionService.GetCategorySummaryAsync(startDate, endDate);
         return Ok(categories);
     }
 }

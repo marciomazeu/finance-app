@@ -16,19 +16,20 @@ namespace FinanceApp.Api.Controllers;
 public class TransactionsController : ControllerBase
 {
     protected int UserId => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
-    private readonly ITransactionService _service;
+    private readonly ITransactionService _transactionService;
 
-    public TransactionsController(ITransactionService service)
+    public TransactionsController(ITransactionService transactionService)
     {
-        _service = service;
+        _transactionService = transactionService;
     }
 
     // MANTIDO: Este já usa o UserId do Token
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] TransactionRequest request)
     {
-        var result = await _service.AddAsync(request, UserId);
-        return Ok(result);
+        //var result = await _service.AddAsync(request, UserId);
+        await _transactionService.CreateAsync(request);
+        return Ok(new { message = "Transação criada com sucesso!" });
     }
 
     // FUNDIDO: Agora é o único GET, aceita datas e filtra por User
@@ -37,7 +38,8 @@ public class TransactionsController : ControllerBase
     {
         // Se o seu service ainda não aceita as datas no GetByUserAsync, 
         // você pode passar apenas o UserId por enquanto ou atualizar o service.
-        var transactions = await _service.GetByUserAsync(UserId); 
+        //var transactions = await _service.GetByUserAsync(UserId); 
+        var transactions = await _transactionService.GetAllAsync(startDate, endDate);
         return Ok(transactions);
     }
 
@@ -47,7 +49,7 @@ public class TransactionsController : ControllerBase
     public async Task<ActionResult> Delete(int id)
     {
         // Importante: No futuro, o DeleteAsync também deve validar o UserId
-        var success = await _service.DeleteAsync(id);
+        var success = await _transactionService.DeleteAsync(id);
         if (!success) return NotFound(new { message = "Transação não encontrada." });
         return NoContent();
     }
@@ -55,7 +57,7 @@ public class TransactionsController : ControllerBase
     [HttpPut("{id}")]
     public async Task<ActionResult> Update(int id, [FromBody] TransactionRequest request)
     {
-        var success = await _service.UpdateAsync(id, request);
+        var success = await _transactionService.UpdateAsync(id, request);
         if (!success) return NotFound(new { message = "Transação não encontrada." });
         return NoContent();
     }
@@ -66,13 +68,13 @@ public class TransactionsController : ControllerBase
     public async Task<ActionResult<DashboardResponse>> GetDashboard([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate)
     {
         // UserId primeiro!
-        return Ok(await _service.GetBalanceAsync(UserId, startDate, endDate));
+        return Ok(await _transactionService.GetBalanceAsync( startDate, endDate));
     }
 
    [HttpGet("categories-summary")]
     public async Task<ActionResult<IEnumerable<CategorySummaryResponse>>> GetCategorySummary([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate)
     {
         // UserId primeiro!
-        return Ok(await _service.GetCategorySummaryAsync(UserId, startDate, endDate));
+        return Ok(await _transactionService.GetCategorySummaryAsync(startDate, endDate));
     }
 }

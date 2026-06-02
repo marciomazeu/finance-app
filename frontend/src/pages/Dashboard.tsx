@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
-// IMPORTAÇÕES DO RECHARTS
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+// ADICIONADO COMPONENTES DE LINHA/ÁREA DO RECHARTS
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area } from 'recharts';
 
 interface SummaryData {
   totalIncomes: number;
@@ -84,13 +84,13 @@ export default function Dashboard() {
 
   // --- PREPARAÇÃO DOS DADOS PARA OS GRÁFICOS ---
 
-  // 1. Dados para o gráfico de barras (Fluxo de Caixa)
+  // 1. Gráfico de Barras (Fluxo de Caixa)
   const barChartData = [
     { name: 'Receitas', valor: summary.totalIncomes },
     { name: 'Despesas', valor: summary.totalExpenses }
   ];
 
-  // 2. Dados para o gráfico de pizza (Despesas por Categoria)
+  // 2. Gráfico de Pizza (Despesas por Categoria)
   const expenseTransactions = transactions.filter(t => t.type === 2);
   const categoryMap: { [key: string]: number } = {};
 
@@ -104,10 +104,28 @@ export default function Dashboard() {
     value: categoryMap[name]
   }));
 
-  // Cores do gráfico de pizza
   const COLORS = ['#0f172a', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-  // --- FUNÇÕES DE HANDLERS (Iguais às anteriores) ---
+  // 3. NOVO: Gráfico de Linha/Área (Evolução do Saldo)
+  // Ordena as transações da mais antiga para a mais recente para calcular o saldo cronologicamente
+  const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  
+  let currentAccumulatedBalance = 0;
+  const balanceChartData = sortedTransactions.map(t => {
+    if (t.type === 1) {
+      currentAccumulatedBalance += t.amount; // Soma receita
+    } else {
+      currentAccumulatedBalance -= t.amount; // Subtrai despesa
+    }
+    
+    return {
+      date: new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' }).format(new Date(t.date)),
+      Saldo: currentAccumulatedBalance,
+      Movimentacao: t.description
+    };
+  });
+
+  // --- FUNÇÕES DE HANDLERS (Mantidas iguais) ---
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCategoryName.trim()) return alert('Digite o nome da categoria!');
@@ -219,56 +237,86 @@ export default function Dashboard() {
           <div className="bg-slate-900 p-6 rounded-xl shadow-xs text-white"><div className="flex justify-between items-center mb-4"><span className="text-sm font-medium text-slate-400">Saldo Atual</span><span className="p-2 bg-white/10 text-white rounded-lg text-xs font-bold">💰 Total</span></div><h2 className="text-3xl font-bold">{formatCurrency(summary.balance)}</h2></div>
         </div>
 
-        {/* SEÇÃO DE GRÁFICOS (NOVA) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          {/* Gráfico de Barras: Fluxo */}
+        {/* SEÇÃO DE GRÁFICOS */}
+        <div className="space-y-6 mb-8">
+          
+          {/* NOVO GRÁFICO: Evolução do Saldo (Largura Total) */}
           <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60">
-            <h3 className="text-base font-bold text-slate-800 mb-4">Fluxo de Caixa</h3>
+            <h3 className="text-base font-bold text-slate-800 mb-1">Evolução do Saldo</h3>
+            <p className="text-xs text-slate-400 mb-4">Veja a variação do seu patrimônio com base no histórico</p>
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} cursor={{ fill: '#f8fafc' }} />
-                  <Bar dataKey="valor" radius={[6, 6, 0, 0]}>
-                    <Cell fill="#10b981" /> {/* Verde para receita */}
-                    <Cell fill="#ef4444" /> {/* Vermelho para despesa */}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Gráfico de Pizza: Categorias */}
-          <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60">
-            <h3 className="text-base font-bold text-slate-800 mb-4">Gastos por Categoria</h3>
-            <div className="h-64 flex items-center justify-center">
-              {pieChartData.length > 0 ? (
+              {balanceChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieChartData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={4}
-                      dataKey="value"
-                    >
-                      {pieChartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                    <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', color: '#64748b' }} />
-                  </PieChart>
+                  <AreaChart data={balanceChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorSaldo" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#0f172a" stopOpacity={0.1}/>
+                        <stop offset="95%" stopColor="#0f172a" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <Tooltip 
+                      formatter={(value) => formatCurrency(Number(value))}
+                      labelFormatter={(label, items) => {
+                        const item = items[0]?.payload;
+                        return item ? `${label} - ${item.Movimentacao}` : label;
+                      }}
+                    />
+                    <Area type="monotone" dataKey="Saldo" stroke="#0f172a" strokeWidth={2} fillOpacity={1} fill="url(#colorSaldo)" />
+                  </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <p className="text-sm text-slate-400">Nenhuma despesa cadastrada para gerar o gráfico.</p>
+                <div className="h-full flex items-center justify-center"><p className="text-sm text-slate-400">Insira transações para ver o histórico do saldo.</p></div>
               )}
             </div>
           </div>
+
+          {/* Gráficos de Fluxo e Categorias (Lado a Lado) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Gráfico de Barras: Fluxo */}
+            <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60">
+              <h3 className="text-base font-bold text-slate-800 mb-4">Fluxo de Caixa</h3>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={barChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <Tooltip formatter={(value) => formatCurrency(Number(value))} cursor={{ fill: '#f8fafc' }} />
+                    <Bar dataKey="valor" radius={[6, 6, 0, 0]}>
+                      <Cell fill="#10b981" />
+                      <Cell fill="#ef4444" />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Gráfico de Pizza: Categorias */}
+            <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60">
+              <h3 className="text-base font-bold text-slate-800 mb-4">Gastos por Categoria</h3>
+              <div className="h-64 flex items-center justify-center">
+                {pieChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={pieChartData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={4} dataKey="value">
+                        {pieChartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                      <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', color: '#64748b' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-sm text-slate-400">Nenhuma despesa cadastrada para gerar o gráfico.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
         </div>
 
         {/* TABELA */}

@@ -18,21 +18,29 @@ interface Transaction {
   accountId: number;
 }
 
+// NOVA: Interface para mapear as categorias do .NET
+interface Category {
+  id: number;
+  name: string;
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   
   // Estados de dados da API
   const [summary, setSummary] = useState<SummaryData>({ totalIncomes: 0, totalExpenses: 0, balance: 0 });
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]); // <-- NOVO: Estado para armazenar as categorias
   const [loading, setLoading] = useState(true);
 
   // Estados do Formulário de Cadastro/Edição
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingTransactionId, setEditingTransactionId] = useState<number | null>(null); // null = Criando, number = Editando
+  const [editingTransactionId, setEditingTransactionId] = useState<number | null>(null);
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [type, setType] = useState(2);
+  const [categoryId, setCategoryId] = useState(''); // <-- NOVO: Guardar a categoria selecionada
   const [formLoading, setFormLoading] = useState(false);
   
   // Estados para o Modal de Exclusão
@@ -40,15 +48,23 @@ export default function Dashboard() {
   const [idToDelete, setIdToDelete] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  // Carrega/Atualiza os dados do painel
+  // Carrega todos os dados necessários (Três requisições paralelas agora)
   async function loadDashboardData() {
     try {
-      const [summaryResponse, transactionsResponse] = await Promise.all([
+      const [summaryResponse, transactionsResponse, categoriesResponse] = await Promise.all([
         api.get<SummaryData>('/Dashboard/summary'),
-        api.get<Transaction[]>('/Transactions')
+        api.get<Transaction[]>('/Transactions'),
+        api.get<Category[]>('/Categories') // <-- NOVO: Busca as categorias do backend
       ]);
+      
       setSummary(summaryResponse.data);
       setTransactions(transactionsResponse.data);
+      setCategories(categoriesResponse.data);
+
+      // Define a primeira categoria como padrão se houver alguma
+      if (categoriesResponse.data.length > 0 && !categoryId) {
+        setCategoryId(categoriesResponse.data[0].id.toString());
+      }
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       localStorage.removeItem('@FinanceApp:token');
@@ -62,72 +78,63 @@ export default function Dashboard() {
     loadDashboardData();
   }, [navigate]);
 
-  // Abre o modal limpo para criação
   const handleOpenCreateModal = () => {
-    setEditingTransactionId(null); // Garante que não há ID de edição salvo
+    setEditingTransactionId(null);
     setDescription('');
     setAmount('');
     setDate(new Date().toISOString().split('T')[0]);
     setType(2);
+    if (categories.length > 0) setCategoryId(categories[0].id.toString());
     setIsModalOpen(true);
   };
 
-  // Abre o modal preenchido para edição
   const handleOpenEditModal = (transaction: Transaction) => {
-    setEditingTransactionId(transaction.id); // Salva o ID que estamos editando
+    setEditingTransactionId(transaction.id);
     setDescription(transaction.description);
     setAmount(transaction.amount.toString());
-    setDate(transaction.date.split('T')[0]); // Corta a hora para o input date aceitar
+    setDate(transaction.date.split('T')[0]);
     setType(transaction.type);
+    setCategoryId(transaction.categoryId.toString()); // Preenche com a categoria do item
     setIsModalOpen(true);
   };
 
-  // Envio do formulário (Trata tanto Criação quanto Edição)
   const handleSaveTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!description || !amount || !date) return alert('Preencha todos os campos!');
+    if (!description || !amount || !date || !categoryId) return alert('Preencha todos os campos!');
 
     setFormLoading(true);
     
-    // Payload padrão exigido pelo .NET
     const payload = {
       description,
       amount: parseFloat(amount),
       date: new Date(date).toISOString(),
       type: Number(type),
-      categoryId: 1,
+      categoryId: Number(categoryId), // <-- Envia o ID selecionado dinamicamente
       accountId: 1
     };
 
     try {
       if (editingTransactionId) {
-        // MODO EDIÇÃO: Envia PUT com o ID na URL
         await api.put(`/Transactions/${editingTransactionId}`, {
-          id: editingTransactionId, // Algumas APIs .NET exigem o ID no body também
+          id: editingTransactionId,
           ...payload
         });
       } else {
-        // MODO CRIAÇÃO: Envia POST normal
         await api.post('/Transactions', payload);
       }
 
       setIsModalOpen(false);
-      await loadDashboardData(); // Recarrega os valores e tabela
+      await loadDashboardData();
     } catch (error) {
       console.error('Erro ao salvar transação:', error);
-      alert('Falha ao salvar a transação. Verifique o console.');
+      alert('Falha ao salvar a transação.');
     } finally {
       setFormLoading(false);
     }
   };
 
-  // Prepara exclusão
-  const openDeleteConfirmation = (id: number) => {
-    setIdToDelete(id);
-    setIsDeleteModalOpen(true);
-  };
-
-  // Executa a exclusão
+  // Funções de Exclusão e Logout (Mantidas idênticas)
+  const openDeleteConfirmation = (id: number) => { setIdToDelete(id); setIsDeleteModalOpen(true); };
   const confirmDeleteTransaction = async () => {
     if (idToDelete === null) return;
     setDeletingId(idToDelete);
@@ -136,26 +143,17 @@ export default function Dashboard() {
       setIsDeleteModalOpen(false);
       setIdToDelete(null);
       await loadDashboardData();
-    } catch (error) {
-      console.error('Erro ao deletar transação:', error);
-      alert('Não foi possível deletar esta transação.');
-    } finally {
-      setDeletingId(null);
-    }
+    } catch (error) { console.error(error); alert('Não foi possível deletar.'); }
+    finally { setDeletingId(null); }
   };
+  const handleLogout = () => { localStorage.removeItem('@FinanceApp:token'); navigate('/'); };
+  const formatCurrency = (value: number) => new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(value);
+  const formatDate = (dateString: string) => new Intl.DateTimeFormat('pt-BR').format(new Date(dateString));
 
-  const handleLogout = () => {
-    localStorage.removeItem('@FinanceApp:token');
-    navigate('/');
-  };
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(value);
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat('pt-BR').format(date);
+  // Função auxiliar para descobrir o nome da categoria na listagem da tabela
+  const getCategoryName = (id: number) => {
+    const category = categories.find(c => c.id === id);
+    return category ? category.name : 'Sem Categoria';
   };
 
   if (loading) {
@@ -170,65 +168,43 @@ export default function Dashboard() {
     <div className="min-h-screen bg-slate-100 p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
         
-        {/* TOPO / HEADER */}
+        {/* TOP / HEADER */}
         <div className="flex justify-between items-center border-b border-slate-200 pb-4 mb-8">
           <div>
             <h1 className="text-2xl font-bold text-slate-800">Minhas Finanças</h1>
             <p className="text-sm text-slate-500">Controle o seu dinheiro de forma simples</p>
           </div>
           <div className="flex gap-4">
-            <button 
-              onClick={handleOpenCreateModal} // Mudou aqui para abrir limpo
-              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-medium transition-colors shadow-xs"
-            >
-              + Nova Transação
-            </button>
-            <button 
-              onClick={handleLogout}
-              className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors shadow-xs"
-            >
-              Sair
-            </button>
+            <button onClick={handleOpenCreateModal} className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-medium transition-colors shadow-xs">+ Nova Transação</button>
+            <button onClick={handleLogout} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors shadow-xs">Sair</button>
           </div>
         </div>
 
-        {/* CARDS DE RESUMO */}
+        {/* CARDS RESUMO (Mantidos iguais) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60">
-            <div className="flex justify-between items-center mb-4">
-              <span className="text-sm font-medium text-slate-500">Entradas</span>
-              <span className="p-2 bg-green-50 text-green-600 rounded-lg text-xs font-bold">▲ Receitas</span>
-            </div>
+            <div className="flex justify-between items-center mb-4"><span className="text-sm font-medium text-slate-500">Entradas</span><span className="p-2 bg-green-50 text-green-600 rounded-lg text-xs font-bold">▲ Receitas</span></div>
             <h2 className="text-3xl font-bold text-slate-800">{formatCurrency(summary.totalIncomes)}</h2>
           </div>
-
           <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60">
-            <div className="flex justify-between items-center mb-4">
-              <span className="text-sm font-medium text-slate-500">Saídas</span>
-              <span className="p-2 bg-red-50 text-red-600 rounded-lg text-xs font-bold">▼ Despesas</span>
-            </div>
+            <div className="flex justify-between items-center mb-4"><span className="text-sm font-medium text-slate-500">Saídas</span><span className="p-2 bg-red-50 text-red-600 rounded-lg text-xs font-bold">▼ Despesas</span></div>
             <h2 className="text-3xl font-bold text-slate-800">{formatCurrency(summary.totalExpenses)}</h2>
           </div>
-
           <div className="bg-slate-900 p-6 rounded-xl shadow-xs text-white">
-            <div className="flex justify-between items-center mb-4">
-              <span className="text-sm font-medium text-slate-400">Saldo Atual</span>
-              <span className="p-2 bg-white/10 text-white rounded-lg text-xs font-bold">💰 Total</span>
-            </div>
+            <div className="flex justify-between items-center mb-4"><span className="text-sm font-medium text-slate-400">Saldo Atual</span><span className="p-2 bg-white/10 text-white rounded-lg text-xs font-bold">💰 Total</span></div>
             <h2 className="text-3xl font-bold">{formatCurrency(summary.balance)}</h2>
           </div>
         </div>
 
         {/* TABELA DE TRANSAÇÕES */}
         <div className="bg-white rounded-xl shadow-xs border border-slate-200/60 overflow-hidden">
-          <div className="p-6 border-b border-slate-100">
-            <h3 className="text-lg font-bold text-slate-800">Últimas Atividades</h3>
-          </div>
+          <div className="p-6 border-b border-slate-100"><h3 className="text-lg font-bold text-slate-800">Últimas Atividades</h3></div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/75 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase">
                   <th className="py-3 px-6">Descrição</th>
+                  <th className="py-3 px-6">Categoria</th> {/* <-- NOVA COLUNA */}
                   <th className="py-3 px-6">Data</th>
                   <th className="py-3 px-6 text-right">Valor</th>
                   <th className="py-3 px-6 text-center w-32">Ações</th>
@@ -238,33 +214,18 @@ export default function Dashboard() {
                 {transactions.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="py-4 px-6 font-medium text-slate-800">{item.description}</td>
+                    <td className="py-4 px-6 text-slate-500">
+                      <span className="px-2 py-1 bg-slate-100 text-slate-600 text-xs font-medium rounded-md">
+                        {getCategoryName(item.categoryId)} {/* Exibe o nome real da categoria */}
+                      </span>
+                    </td>
                     <td className="py-4 px-6 text-slate-500">{formatDate(item.date)}</td>
                     <td className={`py-4 px-6 text-right font-semibold ${item.type === 1 ? 'text-green-600' : 'text-red-600'}`}>
                       {item.type === 1 ? '+ ' : '- '}{formatCurrency(item.amount)}
                     </td>
                     <td className="py-4 px-6 text-center flex items-center justify-center gap-1">
-                      
-                      {/* BOTÃO DE EDITAR (NOVO) */}
-                      <button
-                        onClick={() => handleOpenEditModal(item)}
-                        className="p-1.5 text-slate-400 hover:text-blue-500 rounded-md hover:bg-blue-50 transition-colors"
-                        title="Editar transação"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4.5 h-4.5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
-                        </svg>
-                      </button>
-
-                      {/* Botão de Excluir */}
-                      <button
-                        onClick={() => openDeleteConfirmation(item.id)}
-                        className="p-1.5 text-slate-400 hover:text-red-500 rounded-md hover:bg-red-50 transition-colors"
-                        title="Deletar transação"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4.5 h-4.5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                        </svg>
-                      </button>
+                      <button onClick={() => handleOpenEditModal(item)} className="p-1.5 text-slate-400 hover:text-blue-500 rounded-md hover:bg-blue-50 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4.5 h-4.5"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" /></svg></button>
+                      <button onClick={() => openDeleteConfirmation(item.id)} className="p-1.5 text-slate-400 hover:text-red-500 rounded-md hover:bg-red-50 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4.5 h-4.5"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg></button>
                     </td>
                   </tr>
                 ))}
@@ -273,20 +234,17 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* MODAL REAPROVEITADO PARA CADASTRO / EDIÇÃO */}
+        {/* MODAL DE CADASTRO / EDIÇÃO */}
         {isModalOpen && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-xs">
             <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100">
-              {/* TÍTULO DINÂMICO CONFORME O MODO */}
-              <h3 className="text-xl font-bold text-slate-800 mb-4">
-                {editingTransactionId ? 'Editar Movimentação' : 'Nova Movimentação'}
-              </h3>
-              
+              <h3 className="text-xl font-bold text-slate-800 mb-4">{editingTransactionId ? 'Editar Movimentação' : 'Nova Movimentação'}</h3>
               <form onSubmit={handleSaveTransaction} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Descrição</label>
                   <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-hidden" />
                 </div>
+                
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Valor ($ CAD)</label>
@@ -297,6 +255,23 @@ export default function Dashboard() {
                     <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-hidden" />
                   </div>
                 </div>
+
+                {/* NOVO: CAMPO SELECT DE CATEGORIAS DINÂMICAS */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Categoria</label>
+                  <select
+                    value={categoryId}
+                    onChange={(e) => setCategoryId(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-hidden focus:border-slate-400"
+                  >
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Tipo de Movimentação</label>
                   <div className="grid grid-cols-2 gap-4 mt-1">
@@ -306,22 +281,18 @@ export default function Dashboard() {
                 </div>
                 <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                   <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-500 rounded-lg">Cancelar</button>
-                  <button type="submit" disabled={formLoading} className="px-4 py-2 text-sm font-medium bg-slate-900 text-white rounded-lg">
-                    {formLoading ? 'Salvando...' : 'Confirmar'}
-                  </button>
+                  <button type="submit" disabled={formLoading} className="px-4 py-2 text-sm font-medium bg-slate-900 text-white rounded-lg">{formLoading ? 'Salvando...' : 'Confirmar'}</button>
                 </div>
               </form>
             </div>
           </div>
         )}
 
-        {/* MODAL 2: CONFIRMAÇÃO DE EXCLUSÃO (Mantido igual) */}
+        {/* MODAL CONFIRMAÇÃO DE EXCLUSÃO (Mantido igual) */}
         {isDeleteModalOpen && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50 backdrop-blur-xs">
             <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl border border-slate-100">
-              <div className="flex items-center justify-center w-12 h-12 bg-red-50 text-red-600 rounded-full mb-4 mx-auto">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
-              </div>
+              <div className="flex items-center justify-center w-12 h-12 bg-red-50 text-red-600 rounded-full mb-4 mx-auto"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg></div>
               <h3 className="text-lg font-bold text-slate-800 text-center mb-2">Excluir Transação</h3>
               <p className="text-sm text-slate-500 text-center mb-6">Tem certeza que deseja apagar este registro? Esta ação não poderá ser desfeita.</p>
               <div className="flex gap-3">

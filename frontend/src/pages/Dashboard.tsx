@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
+// IMPORTAÇÕES DO RECHARTS
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
 interface SummaryData {
   totalIncomes: number;
@@ -42,7 +44,7 @@ export default function Dashboard() {
   const [categoryId, setCategoryId] = useState('');
   const [formLoading, setFormLoading] = useState(false);
 
-  // ESTADOS PARA O NOVO MODAL DE CADASTRO DE CATEGORIA
+  // Estados para o Modal de Categoria
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [categoryLoading, setCategoryLoading] = useState(false);
@@ -52,7 +54,6 @@ export default function Dashboard() {
   const [idToDelete, setIdToDelete] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  // Carrega os dados da API
   async function loadDashboardData() {
     try {
       const [summaryResponse, transactionsResponse, categoriesResponse] = await Promise.all([
@@ -81,37 +82,51 @@ export default function Dashboard() {
     loadDashboardData();
   }, [navigate]);
 
-  // Função para cadastrar nova categoria no .NET
+  // --- PREPARAÇÃO DOS DADOS PARA OS GRÁFICOS ---
+
+  // 1. Dados para o gráfico de barras (Fluxo de Caixa)
+  const barChartData = [
+    { name: 'Receitas', valor: summary.totalIncomes },
+    { name: 'Despesas', valor: summary.totalExpenses }
+  ];
+
+  // 2. Dados para o gráfico de pizza (Despesas por Categoria)
+  const expenseTransactions = transactions.filter(t => t.type === 2);
+  const categoryMap: { [key: string]: number } = {};
+
+  expenseTransactions.forEach(t => {
+    const catName = categories.find(c => c.id === t.categoryId)?.name || 'Geral';
+    categoryMap[catName] = (categoryMap[catName] || 0) + t.amount;
+  });
+
+  const pieChartData = Object.keys(categoryMap).map(name => ({
+    name,
+    value: categoryMap[name]
+  }));
+
+  // Cores do gráfico de pizza
+  const COLORS = ['#0f172a', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+
+  // --- FUNÇÕES DE HANDLERS (Iguais às anteriores) ---
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCategoryName.trim()) return alert('Digite o nome da categoria!');
-
     setCategoryLoading(true);
     try {
-      // Dispara o POST enviando o exato modelo esperado pelo CategoryRequest do backend
-      const response = await api.post<Category>('/Categories', {
-        name: newCategoryName
-      });
-
-      // Recarrega a lista de categorias atualizada do banco
+      const response = await api.post<Category>('/Categories', { name: newCategoryName });
       const categoriesResponse = await api.get<Category[]>('/Categories');
       setCategories(categoriesResponse.data);
-      
-      // Seleciona automaticamente a categoria que acabou de ser criada
       setCategoryId(response.data.id.toString());
-
-      // Fecha o modal menor e limpa o input
       setIsCategoryModalOpen(false);
       setNewCategoryName('');
     } catch (error) {
-      console.error('Erro ao criar categoria:', error);
-      alert('Falha ao cadastrar a categoria. Verifique se a rota aceita o formato.');
+      console.error(error);
+      alert('Falha ao cadastrar a categoria.');
     } finally {
       setCategoryLoading(false);
     }
   };
 
-  // Funções de Controle das Transações (Mantidas iguais)
   const handleOpenCreateModal = () => {
     setEditingTransactionId(null);
     setDescription('');
@@ -135,7 +150,6 @@ export default function Dashboard() {
   const handleSaveTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!description || !amount || !date || !categoryId) return alert('Preencha todos os campos!');
-
     setFormLoading(true);
     const payload = {
       description,
@@ -145,7 +159,6 @@ export default function Dashboard() {
       categoryId: Number(categoryId),
       accountId: 1
     };
-
     try {
       if (editingTransactionId) {
         await api.put(`/Transactions/${editingTransactionId}`, { id: editingTransactionId, ...payload });
@@ -201,9 +214,61 @@ export default function Dashboard() {
 
         {/* RESUMO CARDS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60"><div className="flex justify-between items-center mb-4"><span className="text-sm font-medium text-slate-500">Entradas</span><span className="p-2 bg-green-50 text-green-600 rounded-lg text-xs font-bold">▲ Receitas</span></div><h2 className="text-3xl font-bold text-slate-800">{formatCurrency(summary.totalIncomes)}</h2></div>
-          <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60"><div className="flex justify-between items-center mb-4"><span className="text-sm font-medium text-slate-500">Saídas</span><span className="p-2 bg-red-50 text-red-600 rounded-lg text-xs font-bold">▼ Despesas</span></div><h2 className="text-3xl font-bold text-slate-800">{formatCurrency(summary.totalExpenses)}</h2></div>
+          <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60"><div className="flex justify-between items-center mb-4"><span className="text-sm font-medium text-slate-500">Entradas</span><span className="p-2 bg-green-50 text-green-600 rounded-lg text-xs font-bold">▲ Receitas</span></div><h2 className="text-3xl font-bold text-green-600">{formatCurrency(summary.totalIncomes)}</h2></div>
+          <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60"><div className="flex justify-between items-center mb-4"><span className="text-sm font-medium text-slate-500">Saídas</span><span className="p-2 bg-red-50 text-red-600 rounded-lg text-xs font-bold">▼ Despesas</span></div><h2 className="text-3xl font-bold text-red-600">{formatCurrency(summary.totalExpenses)}</h2></div>
           <div className="bg-slate-900 p-6 rounded-xl shadow-xs text-white"><div className="flex justify-between items-center mb-4"><span className="text-sm font-medium text-slate-400">Saldo Atual</span><span className="p-2 bg-white/10 text-white rounded-lg text-xs font-bold">💰 Total</span></div><h2 className="text-3xl font-bold">{formatCurrency(summary.balance)}</h2></div>
+        </div>
+
+        {/* SEÇÃO DE GRÁFICOS (NOVA) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          {/* Gráfico de Barras: Fluxo */}
+          <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60">
+            <h3 className="text-base font-bold text-slate-800 mb-4">Fluxo de Caixa</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={barChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <Tooltip formatter={(value) => formatCurrency(Number(value))} cursor={{ fill: '#f8fafc' }} />
+                  <Bar dataKey="valor" radius={[6, 6, 0, 0]}>
+                    <Cell fill="#10b981" /> {/* Verde para receita */}
+                    <Cell fill="#ef4444" /> {/* Vermelho para despesa */}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Gráfico de Pizza: Categorias */}
+          <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60">
+            <h3 className="text-base font-bold text-slate-800 mb-4">Gastos por Categoria</h3>
+            <div className="h-64 flex items-center justify-center">
+              {pieChartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pieChartData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {pieChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                    <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', color: '#64748b' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="text-sm text-slate-400">Nenhuma despesa cadastrada para gerar o gráfico.</p>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* TABELA */}
@@ -238,7 +303,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* MODAL DE CADASTRO / EDIÇÃO DE TRANSAÇÕES */}
+        {/* MODAL DE TRANSAÇÕES */}
         {isModalOpen && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-xs">
             <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100">
@@ -258,32 +323,15 @@ export default function Dashboard() {
                     <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" />
                   </div>
                 </div>
-
-                {/* CAMPO SELECT COM BOTÃO "+" DE NOVA CATEGORIA */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Categoria</label>
                   <div className="flex gap-2">
-                    <select
-                      value={categoryId}
-                      onChange={(e) => setCategoryId(e.target.value)}
-                      className="flex-1 p-2.5 border border-slate-200 rounded-lg text-sm bg-white"
-                    >
-                      {categories.map((cat) => (
-                        <option key={cat.id} value={cat.id}>{cat.name}</option>
-                      ))}
+                    <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="flex-1 p-2.5 border border-slate-200 rounded-lg text-sm bg-white">
+                      {categories.map((cat) => (<option key={cat.id} value={cat.id}>{cat.name}</option>))}
                     </select>
-                    {/* Botão para acionar o modal de nova categoria */}
-                    <button
-                      type="button"
-                      onClick={() => setIsCategoryModalOpen(true)}
-                      className="px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors border border-slate-200"
-                      title="Criar nova categoria"
-                    >
-                      +
-                    </button>
+                    <button type="button" onClick={() => setIsCategoryModalOpen(true)} className="px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors border border-slate-200">+</button>
                   </div>
                 </div>
-
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Tipo de Movimentação</label>
                   <div className="grid grid-cols-2 gap-4 mt-1">
@@ -300,62 +348,28 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* NOVO MODAL 3: CADASTRO DE CATEGORIA (ABRE POR CIMA) */}
+        {/* MODAL CADASTRO DE CATEGORIA */}
         {isCategoryModalOpen && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60] backdrop-blur-xs animate-in fade-in duration-100">
-            <div className="bg-white rounded-2xl max-w-xs w-full p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60] backdrop-blur-xs">
+            <div className="bg-white rounded-2xl max-w-xs w-full p-6 shadow-2xl border border-slate-100">
               <h4 className="text-lg font-bold text-slate-800 mb-3">Nova Categoria</h4>
-              
               <form onSubmit={handleCreateCategory} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Nome da Categoria</label>
-                  <input
-                    type="text"
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                    placeholder="Ex: Transporte, Lazer, Estudos"
-                    className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-hidden focus:border-slate-400"
-                    autoFocus
-                  />
+                  <input type="text" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} placeholder="Ex: Transporte, Lazer, Estudos" className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" autoFocus />
                 </div>
-
                 <div className="flex gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => { setIsCategoryModalOpen(false); setNewCategoryName(''); }}
-                    className="flex-1 px-3 py-2 text-sm font-medium text-slate-500 bg-slate-55 hover:bg-slate-100 rounded-lg transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={categoryLoading}
-                    className="flex-1 px-3 py-2 text-sm font-medium bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    {categoryLoading ? 'Salvando...' : 'Adicionar'}
-                  </button>
+                  <button type="button" onClick={() => { setIsCategoryModalOpen(false); setNewCategoryName(''); }} className="flex-1 px-3 py-2 text-sm font-medium text-slate-500 bg-slate-55 hover:bg-slate-100 rounded-lg">Cancelar</button>
+                  <button type="submit" disabled={categoryLoading} className="flex-1 px-3 py-2 text-sm font-medium bg-slate-900 hover:bg-slate-800 text-white rounded-lg">{categoryLoading ? 'Salvando...' : 'Adicionar'}</button>
                 </div>
               </form>
             </div>
           </div>
         )}
 
-       {/* MODAL CONFIRMAÇÃO EXCLUSÃO */}
+        {/* MODAL CONFIRMAÇÃO EXCLUSÃO */}
         {isDeleteModalOpen && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50 backdrop-blur-xs">
-            <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl border border-slate-100">
-              <div className="flex items-center justify-center w-12 h-12 bg-red-50 text-red-600 rounded-full mb-4 mx-auto">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
-                </svg></div>
-                <h3 className="text-lg font-bold text-slate-800 text-center mb-2">Excluir Transação</h3>
-                <p className="text-sm text-slate-500 text-center mb-6">Tem certeza que deseja apagar este registro? Esta ação não poderá ser desfeita.</p>
-                <div className="flex gap-3">
-                  <button type="button" onClick={() => { setIsDeleteModalOpen(false); setIdToDelete(null); }} className="flex-1 px-4 py-2 text-sm font-medium text-slate-600 bg-slate-50 rounded-lg">Cancelar</button>
-                  <button type="button" onClick={confirmDeleteTransaction} disabled={deletingId !== null} className="flex-1 px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg">{deletingId !== null ? 'Apagando...' : 'Sim, Excluir'}</button>
-                  </div>
-                  </div>
-                  </div>)}
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50 backdrop-blur-xs"><div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl border border-slate-100"><div className="flex items-center justify-center w-12 h-12 bg-red-50 text-red-600 rounded-full mb-4 mx-auto"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg></div><h3 className="text-lg font-bold text-slate-800 text-center mb-2">Excluir Transação</h3><p className="text-sm text-slate-500 text-center mb-6">Tem certeza que deseja apagar este registro? Esta ação não poderá ser desfeita.</p><div className="flex gap-3"><button type="button" onClick={() => { setIsDeleteModalOpen(false); setIdToDelete(null); }} className="flex-1 px-4 py-2 text-sm font-medium text-slate-600 bg-slate-50 rounded-lg">Cancelar</button><button type="button" onClick={confirmDeleteTransaction} disabled={deletingId !== null} className="flex-1 px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg">{deletingId !== null ? 'Apagando...' : 'Sim, Excluir'}</button></div></div></div>)}
 
       </div>
     </div>

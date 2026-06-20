@@ -8,11 +8,21 @@ export const api = axios.create({
   },
 });
 
-// O restante do arquivo (interceptors) pode continuar exatamente igual
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('@FinanceApp:token');
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
+// INTERCEPTOR: Adiciona o Token JWT em toda requisição automaticamente
+api.interceptors.request.use(
+  (config) => {
+    // Busca o token do localstorage (ajuste o nome se no seu projeto for diferente, ex: 'token')
+    const token = localStorage.getItem('@FinanceApp:token') || sessionStorage.getItem('@FinanceApp:token');
+    
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
   }
-  return config;
-});
+);
+
+

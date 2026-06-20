@@ -1,425 +1,680 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { api } from '../api';
-// ADICIONADO COMPONENTES DE LINHA/ÁREA DO RECHARTS
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area } from 'recharts';
+import React, { useState, useEffect } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { api } from '../api'; 
+import { transactionService } from '../api/transactionService';
+import { NewTransactionForm } from '../components/NewTransactionForm';
+import { EditTransactionForm } from '../components/EditTransactionForm';
+import { toast } from 'react-toastify';
+import { NewAccountForm } from '../components/NewAccountForm';
+import { categoryService } from '../api/categoryService';
+import { EditAccountForm } from '../components/EditAccountForm';
 
-interface SummaryData {
+interface TransactionItem {
+  id: number;
+  description: string;
+  amount: number;
+  type: number; // 1 = Inflow, 2 = Outflow
+  date: string;
+  accountId: number;
+  categoryId: number;
+}
+
+interface DashboardData {
   totalIncomes: number;
   totalExpenses: number;
   balance: number;
 }
 
-interface Transaction {
-  id: number;
-  amount: number;
+// Interface para os pontos do gráfico de linha
+interface BalanceTrendItem {
   date: string;
-  description: string;
-  type: number;
-  categoryId: number;
-  accountId: number;
+  balance: number;
 }
 
-interface Category {
+interface AccountItem {
+  id: number;
+  name: string;
+  balance: number;
+}
+
+// Interface para os dados do perfil (adicione no topo com as outras)
+interface UserProfile {
+  name: string;
+  email: string;
+  memberSince: string;
+  totalAccountsCount: number;
+}
+
+interface CategoryItem {
   id: number;
   name: string;
 }
 
 export default function Dashboard() {
-  const navigate = useNavigate();
-  
-  // Estados de dados da API
-  const [summary, setSummary] = useState<SummaryData>({ totalIncomes: 0, totalExpenses: 0, balance: 0 });
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Estados do Formulário de Cadastro/Edição de Transações
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingTransactionId, setEditingTransactionId] = useState<number | null>(null);
-  const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [type, setType] = useState(2);
-  const [categoryId, setCategoryId] = useState('');
-  const [formLoading, setFormLoading] = useState(false);
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  const [accounts, setAccounts] = useState<AccountItem[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | string>('all');
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<DashboardData>({
+    totalIncomes: 0,
+    totalExpenses: 0,
+    balance: 0
+  });
 
-  // Estados para o Modal de Categoria
-  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState('');
-  const [categoryLoading, setCategoryLoading] = useState(false);
+  // Dentro do componente Dashboard, junto com os outros states:
+const [activeTab, setActiveTab] = useState<'dashboard' | 'profile'>('dashboard');
+const [profile, setProfile] = useState<UserProfile>({
+  name: 'Márcio Mazeu',
+  email: 'marcio@email.com', // Substitua depois pelo dado dinâmico do seu login/auth se tiver
+  memberSince: 'Janeiro de 2026',
+  totalAccountsCount: 0
+});
   
-  // Estados para o Modal de Exclusão
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [idToDelete, setIdToDelete] = useState<number | null>(null);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [transactions, setTransactions] = useState<TransactionItem[]>([]);
+  const [trendData, setTrendData] = useState<BalanceTrendItem[]>([]); // ESTADO NOVO PARA O GRÁFICO
+  const [editingTransaction, setEditingTransaction] = useState<TransactionItem | null>(null);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<any | null>(null);
 
-  async function loadDashboardData() {
-    try {
-      const [summaryResponse, transactionsResponse, categoriesResponse] = await Promise.all([
-        api.get<SummaryData>('/Dashboard/summary'),
-        api.get<Transaction[]>('/Transactions'),
-        api.get<Category[]>('/Categories')
-      ]);
-      
-      setSummary(summaryResponse.data);
-      setTransactions(transactionsResponse.data);
-      setCategories(categoriesResponse.data);
-
-      if (categoriesResponse.data.length > 0 && !categoryId) {
-        setCategoryId(categoriesResponse.data[0].id.toString());
-      }
-    } catch (error) {
-      console.error('Erro ao carregar dados:', error);
-      localStorage.removeItem('@FinanceApp:token');
-      navigate('/');
-    } finally {
-      setLoading(false);
+  const loadDashboardData = async () => {
+  try {
+    setLoading(true);
+    
+    // 1. CAPTURA O TOKEN DO STORAGE E INJETA DIRETO NA INSTÂNCIA DA API
+    const token = localStorage.getItem('@FinanceApp:token') || sessionStorage.getItem('@FinanceApp:token');
+    if (token) {
+      // Força o token no header global da sua instância 'api'
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    } else {
+      console.warn("Nenhum token encontrado no localStorage ou sessionStorage!");
     }
+    
+    // 2. Busca os dados de resumo dos cards (Sua chamada antiga continua aqui)
+    const responseSummary = await api.get<any>('/transactions/dashboard'); 
+    const totalBalance = responseSummary.data.balance ?? responseSummary.data.Balance ?? 0;
+    
+    setData({
+      totalIncomes: responseSummary.data.totalIncomes ?? responseSummary.data.TotalIncomes ?? 0,
+      totalExpenses: responseSummary.data.totalExpenses ?? responseSummary.data.TotalExpenses ?? 0,
+      balance: totalBalance
+    });
+
+    // 2. BUSCA AS CONTAS TRATANDO PASCALCASE DO C# (Ajustado)
+    try {
+      const responseAccounts = await api.get<any[]>('/accounts'); // ⚠️ Se quebrar, teste mudar para '/api/accounts'
+      
+      console.log("CONTAS VINDAS DO BACKEND:", responseAccounts.data); // <-- Monitore no F12
+
+      if (Array.isArray(responseAccounts.data)) {
+        const formattedAccounts = responseAccounts.data.map((acc: any) => ({
+          id: acc.id ?? acc.Id ?? 0,
+          name: acc.name ?? acc.Name ?? 'Sem Nome',
+          balance: acc.balance ?? acc.Balance ?? 0
+        }));
+        setAccounts(formattedAccounts);
+      } else {
+        setAccounts([]);
+      }
+    } catch (accError) {
+      console.error("Erro específico ao buscar contas. Verifique se a rota existe no C#:", accError);
+      setAccounts([]);
+    }
+
+    try {
+      const responseCategories = await api.get<any[]>('/categories'); // Ou '/api/categories' dependendo do seu C#
+      if (Array.isArray(responseCategories.data)) {
+        const formattedCategories = responseCategories.data.map((cat: any) => ({
+          id: cat.id ?? cat.Id ?? 0,
+          name: cat.name ?? cat.Name ?? 'Geral'
+        }));
+        setCategories(formattedCategories);
+      } else {
+        setCategories([{ id: 1, name: 'Geral' }]); // Fallback padrão
+      }
+    } catch (catError) {
+      console.error("Erro ao buscar categorias do backend:", catError);
+      setCategories([{ id: 1, name: 'Geral' }]);
+    }
+
+    // 3. Busca a lista de transações
+    const responseTransactions = await api.get<TransactionItem[]>('/transactions');
+    const transactionsList = responseTransactions.data || [];
+    setTransactions(transactionsList);
+
+    // 4. CÁLCULO DO SALDO ACUMULADO EM TEMPO REAL PARA O GRÁFICO
+    if (Array.isArray(transactionsList) && transactionsList.length > 0) {
+      const sortedTransactions = [...transactionsList].sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      );
+
+      let runningBalance = totalBalance;
+      sortedTransactions.forEach((t) => {
+        if (t.type === 1) runningBalance -= t.amount;
+        else runningBalance += t.amount;
+      });
+
+      const formattedTrend = sortedTransactions.map((t) => {
+        if (t.type === 1) runningBalance += t.amount;
+        else runningBalance -= t.amount;
+
+        return {
+          date: new Date(t.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+          balance: runningBalance,
+          accountId: t.accountId ?? t.accountId
+        };
+      });
+
+      setTrendData(formattedTrend);
+    } else {
+      setTrendData([{ 
+        date: new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }), 
+        balance: totalBalance 
+      }]);
+    }
+
+  } catch (error) {
+    console.error('Erro geral ao buscar dados do dashboard:', error);
+  } finally {
+    setLoading(false);
   }
+};
 
   useEffect(() => {
     loadDashboardData();
-  }, [navigate]);
+  }, []);
 
-  // --- PREPARAÇÃO DOS DADOS PARA OS GRÁFICOS ---
+  const handleTransactionSaved = () => {
+    setIsModalOpen(false);
+    loadDashboardData(); 
+  };
 
-  // 1. Gráfico de Barras (Fluxo de Caixa)
-  const barChartData = [
-    { name: 'Receitas', valor: summary.totalIncomes },
-    { name: 'Despesas', valor: summary.totalExpenses }
-  ];
+  const handleDeleteTransaction = async (id: number) => {
+    if (!confirm('Tem certeza que deseja deletar esta transação? O saldo da conta será recalculado.')) return;
 
-  // 2. Gráfico de Pizza (Despesas por Categoria)
-  const expenseTransactions = transactions.filter(t => t.type === 2);
-  const categoryMap: { [key: string]: number } = {};
-
-  expenseTransactions.forEach(t => {
-    const catName = categories.find(c => c.id === t.categoryId)?.name || 'Geral';
-    categoryMap[catName] = (categoryMap[catName] || 0) + t.amount;
-  });
-
-  const pieChartData = Object.keys(categoryMap).map(name => ({
-    name,
-    value: categoryMap[name]
-  }));
-
-  const COLORS = ['#0f172a', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
-
-  // 3. NOVO: Gráfico de Linha/Área (Evolução do Saldo)
-  // Ordena as transações da mais antiga para a mais recente para calcular o saldo cronologicamente
-  const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  
-  let currentAccumulatedBalance = 0;
-  const balanceChartData = sortedTransactions.map(t => {
-    if (t.type === 1) {
-      currentAccumulatedBalance += t.amount; // Soma receita
-    } else {
-      currentAccumulatedBalance -= t.amount; // Subtrai despesa
-    }
-    
-    return {
-      date: new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' }).format(new Date(t.date)),
-      Saldo: currentAccumulatedBalance,
-      Movimentacao: t.description
-    };
-  });
-
-  // --- FUNÇÕES DE HANDLERS (Mantidas iguais) ---
-  const handleCreateCategory = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCategoryName.trim()) return alert('Digite o nome da categoria!');
-    setCategoryLoading(true);
     try {
-      const response = await api.post<Category>('/Categories', { name: newCategoryName });
-      const categoriesResponse = await api.get<Category[]>('/Categories');
-      setCategories(categoriesResponse.data);
-      setCategoryId(response.data.id.toString());
-      setIsCategoryModalOpen(false);
-      setNewCategoryName('');
-    } catch (error) {
-      console.error(error);
-      alert('Falha ao cadastrar a categoria.');
-    } finally {
-      setCategoryLoading(false);
+      await transactionService.delete(id);
+      toast.success('Transação removida do histórico.');
+      loadDashboardData(); 
+    } catch (error: any) {
+      toast.error('Não foi possível deletar a transação.');
     }
   };
 
-  const handleOpenCreateModal = () => {
-    setEditingTransactionId(null);
-    setDescription('');
-    setAmount('');
-    setDate(new Date().toISOString().split('T')[0]);
-    setType(2);
-    if (categories.length > 0) setCategoryId(categories[0].id.toString());
-    setIsModalOpen(true);
-  };
+  {/* funcoes de filtro*/}
+  // 1º: Primeiro, filtre as transações e ordene os dados base do estado
+const filteredTransactions = selectedAccountId === 'all'
+  ? transactions
+  : transactions.filter(t => t.accountId === Number(selectedAccountId));
 
-  const handleOpenEditModal = (transaction: Transaction) => {
-    setEditingTransactionId(transaction.id);
-    setDescription(transaction.description);
-    setAmount(transaction.amount.toString());
-    setDate(transaction.date.split('T')[0]);
-    setType(transaction.type);
-    setCategoryId(transaction.categoryId.toString());
-    setIsModalOpen(true);
-  };
+const filteredTrendData = selectedAccountId === 'all'
+  ? trendData
+  : trendData.filter((t: any) => t.accountId === Number(selectedAccountId));
 
-  const handleSaveTransaction = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!description || !amount || !date || !categoryId) return alert('Preencha todos os campos!');
-    setFormLoading(true);
-    const payload = {
-      description,
-      amount: parseFloat(amount),
-      date: new Date(date).toISOString(),
-      type: Number(type),
-      categoryId: Number(categoryId),
-      accountId: 1
-    };
-    try {
-      if (editingTransactionId) {
-        await api.put(`/Transactions/${editingTransactionId}`, { id: editingTransactionId, ...payload });
-      } else {
-        await api.post('/Transactions', payload);
-      }
-      setIsModalOpen(false);
-      await loadDashboardData();
-    } catch (error) {
-      console.error(error);
-      alert('Falha ao salvar transação.');
-    } finally {
-      setFormLoading(false);
-    }
-  };
+const activeAccount = accounts.find(a => a.id === Number(selectedAccountId));
+const displayBalance = selectedAccountId === 'all' ? data.balance : (activeAccount?.balance ?? 0);
 
-  const openDeleteConfirmation = (id: number) => { setIdToDelete(id); setIsDeleteModalOpen(true); };
-  const confirmDeleteTransaction = async () => {
-    if (idToDelete === null) return;
-    setDeletingId(idToDelete);
-    try {
-      await api.delete(`/Transactions/${idToDelete}`);
-      setIsDeleteModalOpen(false);
-      setIdToDelete(null);
-      await loadDashboardData();
-    } catch (error) { console.error(error); alert('Erro ao deletar.'); }
-    finally { setDeletingId(null); }
-  };
-  const handleLogout = () => { localStorage.removeItem('@FinanceApp:token'); navigate('/'); };
-  const formatCurrency = (value: number) => new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(value);
-  const formatDate = (dateString: string) => new Intl.DateTimeFormat('pt-BR').format(new Date(dateString));
-  const getCategoryName = (id: number) => { const cat = categories.find(c => c.id === id); return cat ? cat.name : 'Geral'; };
-
-  if (loading) {
-    return <div className="min-h-screen bg-slate-100 flex items-center justify-center"><p className="text-slate-600 font-medium">Carregando dados...</p></div>;
+  // CÁLCULO DINÂMICO PARA O GRÁFICO DE BARRAS
+const mockChartData = (() => {
+  // Se for "Todas as Contas", usa o total geral que veio da API
+  if (selectedAccountId === 'all') {
+    return [
+      { name: 'Total Acumulado', Incomes: data.totalIncomes, Expenses: data.totalExpenses }
+    ];
   }
 
+  // Se for uma conta específica, soma apenas as transações dela que estão na tela
+  let incomesDaConta = 0;
+  let expensesDaConta = 0;
+
+  filteredTransactions.forEach(t => {
+    if (t.type === 1) {
+      incomesDaConta += t.amount; // 1 = Entrada (Receita)
+    } else {
+      expensesDaConta += t.amount; // 2 = Saída (Despesa)
+    }
+  });
+
+  return [
+    { name: 'Total Acumulado', Incomes: incomesDaConta, Expenses: expensesDaConta }
+  ];
+})();
+
+  if (loading && transactions.length === 0) {
+    return <div style={{ padding: '20px', textAlign: 'center' }}>Carregando painel...</div>;
+  }
+
+  const handleLogout = () => {
+  // 1. Remove o token inválido do navegador
+  localStorage.removeItem('@FinanceApp:token');
+  sessionStorage.removeItem('@FinanceApp:token');
+
+  // 2. Remove o header do Axios para não enviar lixo nas próximas requisições
+  if (api.defaults.headers.common['Authorization']) {
+    delete api.defaults.headers.common['Authorization'];
+  }
+
+  toast.info('Sessão encerrada. Redirecionando...');
+
+  // 3. Redireciona o usuário para a tela de login
+  // Se você usa React Router:
+  // navigate('/login');
+  
+  // Se não usa rotas complexas, o recarregamento resolve voltando para a raiz:
+  window.location.href = '/login'; 
+};
+
   return (
-    <div className="min-h-screen bg-slate-100 p-4 md:p-8">
-      <div className="max-w-6xl mx-auto">
+    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto', fontFamily: 'sans-serif' }}>
+      
+      {/* Menu de Navegação Superior */}
+    <div style={{ display: 'flex', gap: '20px', marginBottom: '25px', borderBottom: '1px solid #eee', paddingBottom: '10px' }}>
+      <button 
+        onClick={() => setActiveTab('dashboard')}
+        style={{ background: 'none', border: 'none', padding: '10px', fontSize: '16px', fontWeight: activeTab === 'dashboard' ? 'bold' : 'normal', color: activeTab === 'dashboard' ? '#007bff' : '#666', borderBottom: activeTab === 'dashboard' ? '3px solid #007bff' : 'none', cursor: 'pointer' }}
+      >
+        Painel Geral
+      </button>
+      <button 
+        onClick={() => {
+          setActiveTab('profile');
+          // Atualiza a contagem de contas do perfil em tempo real ao clicar
+          setProfile(prev => ({ ...prev, totalAccountsCount: accounts.length }));
+        }}
+        style={{ background: 'none', border: 'none', padding: '10px', fontSize: '16px', fontWeight: activeTab === 'profile' ? 'bold' : 'normal', color: activeTab === 'profile' ? '#007bff' : '#666', borderBottom: activeTab === 'profile' ? '3px solid #007bff' : 'none', cursor: 'pointer' }}
+      >
+        Meu Perfil
+      </button>
+    </div>
+    {activeTab === 'dashboard' ? (
+  <>
+    {/* TODO O SEU CÓDIGO ANTIGO DO DASHBOARD FICA AQUI DENTRO (Do Cabeçalho até a lista de transações) */}
+ {/* Cabeçalho */}
+<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+  <div>
+    <h1 style={{ margin: 0, fontSize: '28px', color: '#333' }}>Dashboard Financeiro</h1>
+    <p style={{ margin: '5px 0 0 0', color: '#666' }}>Visão geral das suas finanças</p>
+  </div>
+  
+  {/* Container para agrupar os botões lado a lado */}
+  <div style={{ display: 'flex', gap: '12px' }}>
+    <button 
+      onClick={() => setIsAccountModalOpen(true)}
+      style={{ padding: '12px 24px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px' }}
+    >
+      + Nova Conta
+    </button>
+
+    <button 
+      onClick={() => setIsCategoryModalOpen(true)}
+      style={{ padding: '12px 24px', backgroundColor: '#17a2b8', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px' }}
+    >
+      + Nova Categoria
+    </button>
+    
+    <button 
+      onClick={() => setIsModalOpen(true)}
+      style={{ padding: '12px 24px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px' }}
+    >
+      + Nova Transação
+    </button>
+  </div>
+</div>
+
+      {/* Cards de Resumo */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '40px' }}>
+        <div style={{ padding: '20px', backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', borderLeft: '5px solid #007bff' }}>
+          <span style={{ fontSize: '14px', color: '#888', fontWeight: 'bold' }}>SALDO ATUAL TOTAL</span>
+          <h2 style={{ margin: '10px 0 0 0', fontSize: '24px', color: displayBalance >= 0 ? '#333' : '#dc3545' }}>
+            R$ {displayBalance.toFixed(2)}
+          </h2>
+        </div>
+
+        <div style={{ padding: '20px', backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', borderLeft: '5px solid #28a745' }}>
+          <span style={{ fontSize: '14px', color: '#888', fontWeight: 'bold' }}>RECEITAS (ENTRADAS)</span>
+          <h2 style={{ margin: '10px 0 0 0', fontSize: '24px', color: '#28a745' }}>
+            R$ {displayBalance.toFixed(2)}
+          </h2>
+        </div>
+
+        <div style={{ padding: '20px', backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', borderLeft: '5px solid #dc3545' }}>
+          <span style={{ fontSize: '14px', color: '#888', fontWeight: 'bold' }}>DESPESAS (SAÍDAS)</span>
+          <h2 style={{ margin: '10px 0 0 0', fontSize: '24px', color: '#dc3545' }}>
+            R$ {data.totalExpenses.toFixed(2)}
+          </h2>
+        </div>
+      </div>
+
+      {/* Filtro de Extrato por Conta */}
+      <div style={{ backgroundColor: '#fff', padding: '16px 24px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+        <label style={{ fontWeight: 'bold', color: '#555' }}>Filtrar Extrato por Conta:</label>
+        <select 
+          value={selectedAccountId} 
+          onChange={(e) => setSelectedAccountId(e.target.value)}
+          style={{ padding: '8px 12px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px', minWidth: '200px' }}
+        >
+          <option value="all">Visualizar Todas as Contas (Geral)</option>
+          {accounts.map(acc => (
+            <option key={acc.id} value={acc.id}>{acc.name} (R$ {acc.balance.toFixed(2)})</option>
+          ))}
+        </select>
+       
+        {/* BOTÃO PARA EDITAR A CONTA SELECIONADA */}
+        {selectedAccountId !== 'all' && (
+          <button
+            onClick={() => {
+              // Usamos == em vez de === para evitar problemas se um for string e o outro number
+              const accountToEdit = accounts.find(a => String(a.id) == String(selectedAccountId));
+              if (accountToEdit) {
+                setEditingAccount(accountToEdit);
+              } else {
+                console.log("Conta não encontrada no array para edição. ID buscado:", selectedAccountId);
+              }
+            }}
+            style={{ padding: '8px 12px', backgroundColor: '#ffc107', color: '#212529', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' }}
+            title="Editar esta conta"
+          >
+            ✏️ Editar Conta
+          </button>
+        )}
+      </div>
+
+      {/* Seção dos Gráficos */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '40px' }}>
         
-        {/* HEADER */}
-        <div className="flex justify-between items-center border-b border-slate-200 pb-4 mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">Minhas Finanças</h1>
-            <p className="text-sm text-slate-500">Controle o seu dinheiro de forma simples</p>
-          </div>
-          <div className="flex gap-4">
-            <button onClick={handleOpenCreateModal} className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-medium transition-colors shadow-xs">+ Nova Transação</button>
-            <button onClick={handleLogout} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors shadow-xs">Sair</button>
+        {/* Gráfico 1: Barras */}
+        <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+          <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#333' }}>Proporção de Entradas vs Saídas</h3>
+          <div style={{ width: '100%', height: '300px' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={mockChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip formatter={(value: number) => `R$ ${value.toFixed(2)}`} />
+                <Bar dataKey="Incomes" name="Receitas" fill="#28a745" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Expenses" name="Despesas" fill="#dc3545" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
 
-        {/* RESUMO CARDS */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60"><div className="flex justify-between items-center mb-4"><span className="text-sm font-medium text-slate-500">Entradas</span><span className="p-2 bg-green-50 text-green-600 rounded-lg text-xs font-bold">▲ Receitas</span></div><h2 className="text-3xl font-bold text-green-600">{formatCurrency(summary.totalIncomes)}</h2></div>
-          <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60"><div className="flex justify-between items-center mb-4"><span className="text-sm font-medium text-slate-500">Saídas</span><span className="p-2 bg-red-50 text-red-600 rounded-lg text-xs font-bold">▼ Despesas</span></div><h2 className="text-3xl font-bold text-red-600">{formatCurrency(summary.totalExpenses)}</h2></div>
-          <div className="bg-slate-900 p-6 rounded-xl shadow-xs text-white"><div className="flex justify-between items-center mb-4"><span className="text-sm font-medium text-slate-400">Saldo Atual</span><span className="p-2 bg-white/10 text-white rounded-lg text-xs font-bold">💰 Total</span></div><h2 className="text-3xl font-bold">{formatCurrency(summary.balance)}</h2></div>
-        </div>
-
-        {/* SEÇÃO DE GRÁFICOS */}
-        <div className="space-y-6 mb-8">
+        {/* Gráfico 2: Linha de Tendência - CORRIGIDO */}
+        <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+          <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#333' }}>Tendência de Saldo</h3>
           
-          {/* NOVO GRÁFICO: Evolução do Saldo (Largura Total) */}
-          <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60">
-            <h3 className="text-base font-bold text-slate-800 mb-1">Evolução do Saldo</h3>
-            <p className="text-xs text-slate-400 mb-4">Veja a variação do seu patrimônio com base no histórico</p>
-            <div className="h-64">
-              {balanceChartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={balanceChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorSaldo" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#0f172a" stopOpacity={0.1}/>
-                        <stop offset="95%" stopColor="#0f172a" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <Tooltip 
-                      formatter={(value) => formatCurrency(Number(value))}
-                      labelFormatter={(label, items) => {
-                        const item = items[0]?.payload;
-                        return item ? `${label} - ${item.Movimentacao}` : label;
-                      }}
-                    />
-                    <Area type="monotone" dataKey="Saldo" stroke="#0f172a" strokeWidth={2} fillOpacity={1} fill="url(#colorSaldo)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center"><p className="text-sm text-slate-400">Insira transações para ver o histórico do saldo.</p></div>
-              )}
+          {!trendData || trendData.length === 0 ? (
+            <p style={{ color: '#666', textAlign: 'center', padding: '120px 0' }}>Nenhum dado de saldo encontrado para o período.</p>
+          ) : (
+            <div style={{ width: '100%', height: '300px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={filteredTrendData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                  <XAxis dataKey="date" stroke="#888888" style={{ fontSize: '12px' }} />
+                  <YAxis stroke="#888888" style={{ fontSize: '12px' }} />
+                  <Tooltip formatter={(value: any) => [`R$ ${Number(value).toFixed(2)}`, 'Saldo']} />
+                  <Line 
+                    type="monotone" 
+                    dataKey="balance" 
+                    stroke="#007bff" 
+                    strokeWidth={3} 
+                    dot={{ r: 4 }}
+                    activeDot={{ r: 8 }} 
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
-          </div>
-
-          {/* Gráficos de Fluxo e Categorias (Lado a Lado) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Gráfico de Barras: Fluxo */}
-            <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60">
-              <h3 className="text-base font-bold text-slate-800 mb-4">Fluxo de Caixa</h3>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={barChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={(value) => formatCurrency(Number(value))} cursor={{ fill: '#f8fafc' }} />
-                    <Bar dataKey="valor" radius={[6, 6, 0, 0]}>
-                      <Cell fill="#10b981" />
-                      <Cell fill="#ef4444" />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Gráfico de Pizza: Categorias */}
-            <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200/60">
-              <h3 className="text-base font-bold text-slate-800 mb-4">Gastos por Categoria</h3>
-              <div className="h-64 flex items-center justify-center">
-                {pieChartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={pieChartData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={4} dataKey="value">
-                        {pieChartData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                      <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', color: '#64748b' }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <p className="text-sm text-slate-400">Nenhuma despesa cadastrada para gerar o gráfico.</p>
-                )}
-              </div>
-            </div>
-          </div>
-
+          )}
         </div>
-
-        {/* TABELA */}
-        <div className="bg-white rounded-xl shadow-xs border border-slate-200/60 overflow-hidden">
-          <div className="p-6 border-b border-slate-100"><h3 className="text-lg font-bold text-slate-800">Últimas Atividades</h3></div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50/75 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase">
-                  <th className="py-3 px-6">Descrição</th>
-                  <th className="py-3 px-6">Categoria</th>
-                  <th className="py-3 px-6">Data</th>
-                  <th className="py-3 px-6 text-right">Valor</th>
-                  <th className="py-3 px-6 text-center w-32">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-sm text-slate-600">
-                {transactions.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="py-4 px-6 font-medium text-slate-800">{item.description}</td>
-                    <td className="py-4 px-6 text-slate-500"><span className="px-2 py-1 bg-slate-100 text-slate-600 text-xs font-medium rounded-md">{getCategoryName(item.categoryId)}</span></td>
-                    <td className="py-4 px-6 text-slate-500">{formatDate(item.date)}</td>
-                    <td className={`py-4 px-6 text-right font-semibold ${item.type === 1 ? 'text-green-600' : 'text-red-600'}`}>{item.type === 1 ? '+ ' : '- '}{formatCurrency(item.amount)}</td>
-                    <td className="py-4 px-6 text-center flex items-center justify-center gap-1">
-                      <button onClick={() => handleOpenEditModal(item)} className="p-1.5 text-slate-400 hover:text-blue-500 rounded-md hover:bg-blue-50 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4.5 h-4.5"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" /></svg></button>
-                      <button onClick={() => openDeleteConfirmation(item.id)} className="p-1.5 text-slate-400 hover:text-red-500 rounded-md hover:bg-red-50 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4.5 h-4.5"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg></button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* MODAL DE TRANSAÇÕES */}
-        {isModalOpen && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-xs">
-            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100">
-              <h3 className="text-xl font-bold text-slate-800 mb-4">{editingTransactionId ? 'Editar Movimentação' : 'Nova Movimentação'}</h3>
-              <form onSubmit={handleSaveTransaction} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Descrição</label>
-                  <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Valor ($ CAD)</label>
-                    <input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Data</label>
-                    <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Categoria</label>
-                  <div className="flex gap-2">
-                    <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="flex-1 p-2.5 border border-slate-200 rounded-lg text-sm bg-white">
-                      {categories.map((cat) => (<option key={cat.id} value={cat.id}>{cat.name}</option>))}
-                    </select>
-                    <button type="button" onClick={() => setIsCategoryModalOpen(true)} className="px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors border border-slate-200">+</button>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Tipo de Movimentação</label>
-                  <div className="grid grid-cols-2 gap-4 mt-1">
-                    <button type="button" onClick={() => setType(1)} className={`p-2.5 rounded-lg border text-sm font-medium ${type === 1 ? 'bg-green-50 border-green-500 text-green-700' : 'border-slate-200'}`}>▲ Receita</button>
-                    <button type="button" onClick={() => setType(2)} className={`p-2.5 rounded-lg border text-sm font-medium ${type === 2 ? 'bg-red-50 border-red-500 text-red-700' : 'border-slate-200'}`}>▼ Gasto</button>
-                  </div>
-                </div>
-                <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-                  <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-500 rounded-lg">Cancelar</button>
-                  <button type="submit" disabled={formLoading} className="px-4 py-2 text-sm font-medium bg-slate-900 text-white rounded-lg">{formLoading ? 'Salvando...' : 'Confirmar'}</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* MODAL CADASTRO DE CATEGORIA */}
-        {isCategoryModalOpen && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60] backdrop-blur-xs">
-            <div className="bg-white rounded-2xl max-w-xs w-full p-6 shadow-2xl border border-slate-100">
-              <h4 className="text-lg font-bold text-slate-800 mb-3">Nova Categoria</h4>
-              <form onSubmit={handleCreateCategory} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Nome da Categoria</label>
-                  <input type="text" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} placeholder="Ex: Transporte, Lazer, Estudos" className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" autoFocus />
-                </div>
-                <div className="flex gap-2 pt-2">
-                  <button type="button" onClick={() => { setIsCategoryModalOpen(false); setNewCategoryName(''); }} className="flex-1 px-3 py-2 text-sm font-medium text-slate-500 bg-slate-55 hover:bg-slate-100 rounded-lg">Cancelar</button>
-                  <button type="submit" disabled={categoryLoading} className="flex-1 px-3 py-2 text-sm font-medium bg-slate-900 hover:bg-slate-800 text-white rounded-lg">{categoryLoading ? 'Salvando...' : 'Adicionar'}</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* MODAL CONFIRMAÇÃO EXCLUSÃO */}
-        {isDeleteModalOpen && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50 backdrop-blur-xs"><div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl border border-slate-100"><div className="flex items-center justify-center w-12 h-12 bg-red-50 text-red-600 rounded-full mb-4 mx-auto"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg></div><h3 className="text-lg font-bold text-slate-800 text-center mb-2">Excluir Transação</h3><p className="text-sm text-slate-500 text-center mb-6">Tem certeza que deseja apagar este registro? Esta ação não poderá ser desfeita.</p><div className="flex gap-3"><button type="button" onClick={() => { setIsDeleteModalOpen(false); setIdToDelete(null); }} className="flex-1 px-4 py-2 text-sm font-medium text-slate-600 bg-slate-50 rounded-lg">Cancelar</button><button type="button" onClick={confirmDeleteTransaction} disabled={deletingId !== null} className="flex-1 px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg">{deletingId !== null ? 'Apagando...' : 'Sim, Excluir'}</button></div></div></div>)}
 
       </div>
+
+      {/* Lista de Últimas Transações */}
+      <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+        <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#333' }}>Últimas Transações</h3>
+        
+        {filteredTransactions.length === 0 ? (
+          <p style={{ color: '#666' }}>Nenhuma transação cadastrada ainda.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {filteredTransactions.map((t) => (
+              <div key={t.id} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '12px 16px', border: '1px solid #eee', borderRadius: '6px',
+                backgroundColor: '#fafafa'
+              }}>
+                <div>
+                  <strong style={{ color: '#333' }}>{t.description}</strong>
+                  <div style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>
+                    {new Date(t.date).toLocaleDateString('pt-BR')}
+                  </div>
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                  <strong style={{ color: t.type === 1 ? '#28a745' : '#dc3545', fontSize: '16px' }}>
+                    {t.type === 1 ? '+' : '-'} R$ {t.amount.toFixed(2)}
+                  </strong>
+
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button 
+                      onClick={() => setEditingTransaction(t)} 
+                      style={{ padding: '4px 8px', backgroundColor: '#ffc107', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                    >
+                      Editar
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteTransaction(t.id)}
+                      style={{ padding: '4px 8px', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                    >
+                      Excluir
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+  </>
+) : (
+     /* ---------------------------------------------------- */
+  /* TELA DE PERFIL (SÓ APARECE SE ACTIVE TAB FOR 'PROFILE') */
+  /* ---------------------------------------------------- */
+  <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', maxWidth: '600px', margin: '0 auto' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '30px' }}>
+      <div style={{ width: '70px', height: '70px', borderRadius: '50%', backgroundColor: '#007bff', color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '28px', fontWeight: 'bold' }}>
+        {profile.name.charAt(0)}
+      </div>
+      <div>
+        <h2 style={{ margin: 0, color: '#333' }}>{profile.name}</h2>
+        <p style={{ margin: '4px 0 0 0', color: '#888', fontSize: '14px' }}>Usuário do FinanceApp</p>
+      </div>
     </div>
+
+    <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '20px 0' }} />
+
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #fafafa' }}>
+        <span style={{ color: '#666', fontWeight: 'bold' }}>E-mail:</span>
+        <span style={{ color: '#333' }}>{profile.email}</span>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #fafafa' }}>
+        <span style={{ color: '#666', fontWeight: 'bold' }}>Membro desde:</span>
+        <span style={{ color: '#333' }}>{profile.memberSince}</span>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #fafafa' }}>
+        <span style={{ color: '#666', fontWeight: 'bold' }}>Contas Bancárias Ativas:</span>
+        <span style={{ color: '#007bff', fontWeight: 'bold' }}>{profile.totalAccountsCount} cadastradas</span>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}>
+        <span style={{ color: '#666', fontWeight: 'bold' }}>Total de Transações:</span>
+        <span style={{ color: '#28a745', fontWeight: 'bold' }}>{transactions.length} movimentações</span>
+      </div>
+    </div>
+
+    <button 
+      onClick={() => {
+        alert('Funcionalidade de edição ou logout pode ser integrada aqui!');
+      }}
+      style={{ marginTop: '30px', width: '100%', padding: '12px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+    >
+      Configurações da Conta
+    </button>
+    <button 
+  onClick={handleLogout}
+  style={{ 
+    marginTop: '30px', 
+    width: '100%', 
+    padding: '12px', 
+    backgroundColor: '#dc3545', // Cor vermelha de atenção
+    color: 'white', 
+    border: 'none', 
+    borderRadius: '6px', 
+    cursor: 'pointer', 
+    fontWeight: 'bold',
+    fontSize: '15px'
+  }}
+>
+  🚪 Sair da Conta (Logout)
+</button>
+  </div>
+)}
+
+      {/* MODAIS FLUTUANTES */}
+      {isModalOpen && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+          backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white', padding: '30px', borderRadius: '8px', 
+            boxShadow: '0px 4px 15px rgba(0,0,0,0.3)', position: 'relative', minWidth: '380px'
+          }}>
+            <button 
+              onClick={() => setIsModalOpen(false)}
+              style={{ position: 'absolute', top: '15px', right: '15px', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}
+            >
+              ✕
+            </button>
+            <NewTransactionForm onSave={handleTransactionSaved} />
+          </div>
+        </div>
+      )}
+
+      {editingTransaction && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+          backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white', padding: '30px', borderRadius: '8px', 
+            boxShadow: '0px 4px 15px rgba(0,0,0,0.3)', position: 'relative', minWidth: '380px'
+          }}>
+            <button 
+              onClick={() => setEditingTransaction(null)} 
+              style={{ position: 'absolute', top: '15px', right: '15px', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}
+            >
+              ✕
+            </button>
+
+            <EditTransactionForm 
+              transaction={editingTransaction} 
+              onSave={() => {
+                setEditingTransaction(null);
+                toast.success('Transação atualizada com sucesso! ✨'); 
+                loadDashboardData();       
+              }} 
+            />
+          </div>
+        </div>
+      )}
+
+{/* MODAL FLUTUANTE DE NOVA CONTA */}
+{isAccountModalOpen && (
+  <div style={{
+    position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000
+  }}>
+    <div style={{
+      backgroundColor: 'white', padding: '30px', borderRadius: '8px', 
+      boxShadow: '0px 4px 15px rgba(0,0,0,0.3)', position: 'relative', minWidth: '380px'
+    }}>
+      <button 
+        onClick={() => setIsAccountModalOpen(false)}
+        style={{ position: 'absolute', top: '15px', right: '15px', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}
+      >
+        ✕
+      </button>
+      
+      {/* Insira aqui o seu componente de formulário de conta */}
+      {/* Exemplo: <NewAccountForm onSave={() => { setIsAccountModalOpen(false); loadDashboardData(); }} /> */}
+      <NewAccountForm 
+        onSave={() => { 
+          setIsAccountModalOpen(false); // Fecha o modal após salvar
+          loadDashboardData();          // Recarrega o dashboard (para atualizar os selects de conta se necessário)
+          toast.success('Nova conta adicionada com sucesso! 🏦');
+        }} 
+      />
+    </div>
+  </div>
+)}
+{isCategoryModalOpen && (
+  <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+    <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', boxShadow: '0px 4px 15px rgba(0,0,0,0.3)', position: 'relative', minWidth: '380px' }}>
+      <button onClick={() => setIsCategoryModalOpen(false)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✕</button>
+      
+      {/* Formulário Simples inline */}
+      <h3 style={{ marginTop: 0 }}>Adicionar Nova Categoria</h3>
+      <input 
+        id="new-category-name"
+        type="text" 
+        placeholder="Ex: Combustível, Streaming..." 
+        style={{ width: '100%', padding: '10px', marginBottom: '15px', borderRadius: '4px', border: '1px solid #ccc', boxSizing: 'border-box' }}
+      />
+      <button 
+        onClick={async () => {
+          const input = document.getElementById('new-category-name') as HTMLInputElement;
+          if (!input.value.trim()) return toast.warning('Digite o nome da categoria');
+          
+          try {
+            await api.post('/categories', { name: input.value.trim() });
+            toast.success('Categoria adicionada! 🏷️');
+            setIsCategoryModalOpen(false);
+            loadDashboardData(); // Recarrega para atualizar os selects
+          } catch (err) {
+            toast.error('Erro ao salvar categoria');
+          }
+        }}
+        style={{ width: '100%', padding: '12px', backgroundColor: '#17a2b8', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+      >
+        Salvar Categoria
+      </button>
+    </div>
+  </div>
+)}
+
+    {/* MODAL FLUTUANTE DE EDITAR CONTA */}
+    {editingAccount && (
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+        <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', boxShadow: '0px 4px 15px rgba(0,0,0,0.3)', position: 'relative', minWidth: '380px' }}>
+          <button onClick={() => setEditingAccount(null)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✕</button>
+          
+          <EditAccountForm 
+            account={editingAccount} 
+            onSave={() => {
+              setEditingAccount(null);
+              loadDashboardData(); // Recarrega os dados atualizados do backend
+            }} 
+          />
+        </div>
+      </div>
+    )}
+    </div>
+
+    
   );
 }

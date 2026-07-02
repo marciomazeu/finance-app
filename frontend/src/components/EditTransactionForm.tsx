@@ -18,7 +18,6 @@ interface EditTransactionFormProps {
   onSave: () => void;
 }
 
-// Função auxiliar para garantir que os dados recebidos sejam convertidos em Arrays válidos
 const ensureArray = (data: any): any[] => {
   if (Array.isArray(data)) return data;
   if (data && typeof data === 'object') {
@@ -30,7 +29,6 @@ const ensureArray = (data: any): any[] => {
 };
 
 export const EditTransactionForm: React.FC<EditTransactionFormProps> = ({ transaction, onSave }) => {
-  // Dados vindos do Banco inicializados como Arrays vazios
   const [accounts, setAccounts] = useState<AccountResponse[]>([]);
   const [categories, setCategories] = useState<CategoryResponse[]>([]);
 
@@ -41,6 +39,15 @@ export const EditTransactionForm: React.FC<EditTransactionFormProps> = ({ transa
   const [accountId, setAccountId] = useState(transaction.accountId.toString());
   const [categoryId, setCategoryId] = useState(transaction.categoryId.toString());
   const [loading, setLoading] = useState(false);
+  const [date, setDate] = useState('');
+
+  // Sincroniza a data inicial quando a transação é recebida ou alterada
+  useEffect(() => {
+    if (transaction && transaction.date) {
+      // Limpa string ISO pegando apenas YYYY-MM-DD para o input HTML
+      setDate(transaction.date.split('T')[0]);
+    }
+  }, [transaction]);
 
   // Carrega as opções de Contas e Categorias
   useEffect(() => {
@@ -51,7 +58,6 @@ export const EditTransactionForm: React.FC<EditTransactionFormProps> = ({ transa
           categoryService.getAll(),
         ]);
         
-        // CORREÇÃO: Tratando as respostas com o ensureArray antes de salvar no estado
         setAccounts(ensureArray(accountsData));
         setCategories(ensureArray(categoriesData));
       } catch (error) {
@@ -65,7 +71,7 @@ export const EditTransactionForm: React.FC<EditTransactionFormProps> = ({ transa
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!description || !amount || !accountId || !categoryId) {
+    if (!description || !amount || !accountId || !categoryId || !date) {
       return alert('Por favor, preencha todos os campos.');
     }
 
@@ -74,15 +80,15 @@ export const EditTransactionForm: React.FC<EditTransactionFormProps> = ({ transa
       
       // Envia os dados atualizados para a API
       await transactionService.update(transaction.id, {
-        description,
+        description: description.trim(),
         amount: parseFloat(amount),
-        type: type === 'Inflow' ? 1 : 2, // Converte de volta para os Enums corretos do C# (Inflow=1, Outflow=2)
+        type: type === 'Inflow' ? 1 : 2, 
         accountId: parseInt(accountId),
         categoryId: parseInt(categoryId),
-        date: transaction.date // Mantém a data original da transação
+        date: date // <--- AGORA ENVIA A DATA SELECIONADA EDITÁVEL
       });
 
-      onSave(); // Fecha o modal e atualiza o Dashboard
+      onSave(); 
     } catch (error: any) {
       alert(error.response?.data || 'Erro ao atualizar transação ❌');
     } finally {
@@ -91,15 +97,15 @@ export const EditTransactionForm: React.FC<EditTransactionFormProps> = ({ transa
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '400px' }}>
-      <h3>Editar Transação</h3>
+    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '400px', fontFamily: 'sans-serif' }}>
+      <h3 style={{ margin: '0 0 5px 0' }}>Editar Transação</h3>
 
       <input
         type="text"
         placeholder="Descrição"
         value={description}
         onChange={(e) => setDescription(e.target.value)}
-        style={{ padding: '8px' }}
+        style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px' }}
       />
 
       <input
@@ -108,16 +114,15 @@ export const EditTransactionForm: React.FC<EditTransactionFormProps> = ({ transa
         placeholder="Valor (R$)"
         value={amount}
         onChange={(e) => setAmount(e.target.value)}
-        style={{ padding: '8px' }}
+        style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px' }}
       />
 
-      <select value={type} onChange={(e) => setType(e.target.value as 'Inflow' | 'Outflow')} style={{ padding: '8px' }}>
+      <select value={type} onChange={(e) => setType(e.target.value as 'Inflow' | 'Outflow')} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px' }}>
         <option value="Outflow">Despesa (Saída)</option>
         <option value="Inflow">Receita (Entrada)</option>
       </select>
 
-      {/* SELECT DE CONTAS - CORRIGIDO COM TRAVA DE SEGURANÇA */}
-      <select value={accountId} onChange={(e) => setAccountId(e.target.value)} style={{ padding: '8px' }}>
+      <select value={accountId} onChange={(e) => setAccountId(e.target.value)} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px' }}>
         <option value="">Selecione a Conta</option>
         {Array.isArray(accounts) && accounts.map((acc) => (
           <option key={acc.id} value={acc.id}>
@@ -126,8 +131,7 @@ export const EditTransactionForm: React.FC<EditTransactionFormProps> = ({ transa
         ))}
       </select>
 
-      {/* SELECT DE CATEGORIAS - CORRIGIDO COM TRAVA DE SEGURANÇA */}
-      <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} style={{ padding: '8px' }}>
+      <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px' }}>
         <option value="">Selecione a Categoria</option>
         {Array.isArray(categories) && categories.map((cat) => (
           <option key={cat.id} value={cat.id}>
@@ -136,7 +140,27 @@ export const EditTransactionForm: React.FC<EditTransactionFormProps> = ({ transa
         ))}
       </select>
 
-      <button type="submit" disabled={loading} style={{ padding: '10px', backgroundColor: '#ffc107', color: 'black', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>
+      {/* NOVO CAMPO DE DATA DA TRANSAÇÃO */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <label style={{ fontWeight: 'bold', fontSize: '13px', color: '#555' }}>
+          Data da Transação:
+        </label>
+        <input 
+          type="date" 
+          value={date} 
+          onChange={(e) => setDate(e.target.value)} 
+          style={{ 
+            padding: '10px', 
+            borderRadius: '4px', 
+            border: '1px solid #ccc', 
+            boxSizing: 'border-box',
+            fontSize: '14px',
+            fontFamily: 'inherit'
+          }} 
+        />
+      </div>
+
+      <button type="submit" disabled={loading} style={{ padding: '12px', backgroundColor: '#ffc107', color: 'black', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', marginTop: '5px' }}>
         {loading ? 'Salvando...' : 'Salvar Alterações'}
       </button>
     </form>

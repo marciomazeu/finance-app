@@ -530,7 +530,9 @@ const filteredTrendData = (() => {
                     {filteredTransactions.map((t) => (
                       <tr key={t.id} style={{ borderBottom: '1px solid #eee', transition: 'background-color 0.2s' }}>
                         <td style={{ padding: '14px 16px', color: '#555', fontSize: '14px', whiteSpace: 'nowrap' }}>
-                          {formatDate(t.date || (t as any).Date)}
+                          {new Date(t.date).getUTCDate().toString().padStart(2, '0')}/
+                          {(new Date(t.date).getUTCMonth() + 1).toString().padStart(2, '0')}/
+                          {new Date(t.date).getUTCFullYear()}
                         </td>
                         <td style={{ padding: '14px 16px', fontWeight: '500', color: '#333', fontSize: '14px' }}>
                           {t.description}

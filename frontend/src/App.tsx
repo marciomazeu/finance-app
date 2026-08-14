@@ -5,6 +5,8 @@ import ProtectedRoute from './components/ProtectedRoute'; // <-- Importe o compo
 import { Accounts } from './pages/Accounts';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css'; // Não esqueça do CSS!
+import { Profile } from './pages/Profile';
+import Investments from './pages/Investments';
 
 export default function App() {
   return (
@@ -17,10 +19,12 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/contas" element={<Accounts />} />
+          <Route path="/investments" element={<Investments />} />
         </Route>
         
         {/* Redireciona qualquer rota inválida para o login */}
         <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/profile" element={<Profile />} />
         
       
       </Routes>

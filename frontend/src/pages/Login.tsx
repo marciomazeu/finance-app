@@ -19,10 +19,11 @@ export function Login() {
       // Altere o endpoint '/auth/login' para o caminho exato do seu controller do .NET
      const response = await api.post('/Auth/login', { email, password });
       
-      const { token} = response.data;
+      const { token, refreshToken } = response.data;
 
       // Salvamos o token no navegador para não deslogar ao dar F5
       localStorage.setItem('@FinanceApp:token', token);
+      localStorage.setItem('refreshToken', refreshToken);
       //localStorage.setItem('@FinanceApp:user', JSON.stringify(user));
 
       // 5. Manda o usuário para a página principal
